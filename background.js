@@ -22,7 +22,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return;
   }
 
-  const dedupKey = (msg.profileUrl || "").trim() || postText.substring(0, 60);
+  const dedupKey = (msg.profileUrl || "").trim() 
+    ? (msg.profileUrl.trim() + postText.substring(0, 40) + (msg.platform || ""))
+    : ((msg.posterName || "") + postText.substring(0, 40) + (msg.platform || ""));
+
   if (_sentThisSession.has(dedupKey)) {
     console.log("[RKZ] ⏭ Duplicate suppressed (session):", msg.posterName);
     return;
