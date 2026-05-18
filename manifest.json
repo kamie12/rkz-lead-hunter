@@ -1,0 +1,54 @@
+{
+  "manifest_version": 3,
+  "name": "RKZ Lead Hunter",
+  "version": "2.0",
+  "description": "Scrapes leads from Facebook, LinkedIn, Instagram, Reddit and Google Maps. Sends to local AI agent.",
+
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "tabs"
+  ],
+
+  "host_permissions": [
+    "https://*.facebook.com/*",
+    "https://*.linkedin.com/*",
+    "https://*.instagram.com/*",
+    "https://*.reddit.com/*",
+    "https://www.google.com/maps/*",
+    "https://script.google.com/*",
+    "http://localhost:8080/*",
+    "http://localhost:8081/*"
+  ],
+
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+
+  "action": {
+    "default_popup": "popup.html"
+  },
+
+  "web_accessible_resources": [
+    {
+      "resources": ["dashboard.html"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.facebook.com/*",
+        "https://*.linkedin.com/*",
+        "https://*.instagram.com/*",
+        "https://*.reddit.com/*",
+        "https://www.google.com/maps/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
