@@ -17,13 +17,11 @@
     return "Unknown";
   }
 
-  // ─── Extract Facebook Profile URL (FIXED) ────────────────────────────────
+  // ─── Extract Facebook Profile URL ────────────────────────────────────────
   function extractFacebookProfileUrl(postEl) {
-    // Try all anchor tags inside the post
     const anchors = postEl.querySelectorAll("a[href]");
     for (const a of anchors) {
       const href = a.href || "";
-      // Skip group links, photos, videos, hashtags, reactions
       if (
         href.includes("/groups/") ||
         href.includes("/photo") ||
@@ -34,24 +32,20 @@
         href.includes("/events/") ||
         href.includes("/marketplace/") ||
         href.includes("l.facebook.com") ||
-        href === "" ||
-        href === "#"
+        href === "" || href === "#"
       ) continue;
-
-      // Valid Facebook profile patterns
       if (
-        href.match(/facebook\.com\/[a-zA-Z0-9._]+\/?$/) ||        // facebook.com/username
-        href.includes("facebook.com/profile.php") ||               // profile.php?id=
-        href.match(/facebook\.com\/people\/[^/]+\/[^/]+/)          // /people/name/id
+        href.match(/facebook\.com\/[a-zA-Z0-9._]+\/?$/) ||
+        href.includes("facebook.com/profile.php") ||
+        href.match(/facebook\.com\/people\/[^/]+\/[^/]+/)
       ) {
         return href.split("?")[0];
       }
     }
-    // Fallback: return current page URL
     return window.location.href.split("?")[0];
   }
 
-  // ─── Platform-specific scroll container ──────────────────────────────────
+  // ─── Scroll Container ─────────────────────────────────────────────────────
   function getScrollContainer() {
     const platform = detectPlatform();
     if (platform === "LinkedIn" || platform === "LinkedIn Groups") {
@@ -185,28 +179,21 @@
     } catch(e) { console.log("[RKZ] LI comment error:", e.message); }
   }
 
-  // ─── FACEBOOK SCRAPER (FIXED profileUrl) ─────────────────────────────────
+  // ─── FACEBOOK SCRAPER ─────────────────────────────────────────────────────
   function scrapeFacebook() {
     const leads = [];
-    const postSelectors = [
-      'div[role="article"]',
-      'div[data-pagelet="FeedUnit"]',
-      'div.x1yztbdb',
-    ].join(', ');
+    const postSelectors = ['div[role="article"]', 'div[data-pagelet="FeedUnit"]', 'div.x1yztbdb'].join(', ');
 
     document.querySelectorAll(postSelectors).forEach(post => {
-       console.log("[RKZ] 🔎 FB article found, checking text...");
+      console.log("[RKZ] 🔎 FB article found, checking text...");
       expandSeeMore(post);
 
       let postText = '';
       const textSelectors = [
-  'div[data-ad-comet-preview="message"]',
-  'div[data-ad-preview="message"]',
-  '[data-testid="post_message"]',
-  'div[dir="auto"] span[dir="auto"]',
-  'div[dir="auto"] > div > span',
-  'div[dir="auto"]',
-];
+        'div[data-ad-comet-preview="message"]', 'div[data-ad-preview="message"]',
+        '[data-testid="post_message"]', 'div[dir="auto"] span[dir="auto"]',
+        'div[dir="auto"] > div > span', 'div[dir="auto"]',
+      ];
       for (const sel of textSelectors) {
         const found = post.querySelector(sel);
         if (found) {
@@ -217,7 +204,6 @@
         }
       }
 
-      console.log("[RKZ] 📝 Extracted text:", postText.substring(0, 80) || "EMPTY");
       if (!postText || postText.length < 30) return;
       const quality = scorePost(postText);
       if (quality < MIN_SCORE) return;
@@ -225,7 +211,6 @@
       if (processedPosts.has(key)) return;
       processedPosts.add(key);
 
-      // Get poster name
       let posterName = 'Unknown';
       const nameSelectors = ['h2 a', 'h3 a', 'strong a', 'a[role="link"][tabindex="0"]', 'span > a[role="link"]', 'h5 a', 'h4 a'];
       for (const sel of nameSelectors) {
@@ -235,11 +220,9 @@
         }
       }
 
-      // FIXED: use dedicated function to extract profile URL
       const linkEl = post.querySelector("a[href*='/posts/']") || post.querySelector("a[href*='story_fbid']") || post.querySelector("a[href*='permalink']");
-const profileUrl = linkEl ? linkEl.href.split("?")[0] : window.location.href.split("?")[0];
+      const profileUrl = linkEl ? linkEl.href.split("?")[0] : window.location.href.split("?")[0];
 
-      console.log(`[RKZ] ✅ FB Lead score ${quality} | ${posterName} | URL: ${profileUrl}`);
       leads.push({ postText, posterName, profileUrl, quality, element: post });
     });
     return leads;
@@ -254,8 +237,7 @@ const profileUrl = linkEl ? linkEl.href.split("?")[0] : window.location.href.spl
     ].join(", ")).forEach(btn => { try { btn.click(); } catch(e) {} });
 
     document.querySelectorAll([
-      ".feed-shared-update-v2", ".occludable-update",
-      "li[data-urn]", "div[data-urn]",
+      ".feed-shared-update-v2", ".occludable-update", "li[data-urn]", "div[data-urn]",
     ].join(", ")).forEach(post => {
       const textEl =
         post.querySelector(".feed-shared-inline-show-more-text span[dir='ltr']") ||
@@ -284,13 +266,7 @@ const profileUrl = linkEl ? linkEl.href.split("?")[0] : window.location.href.spl
         post.querySelector("a[href*='/company/']");
 
       const profileUrl = linkEl ? linkEl.href.split("?")[0] : window.location.href.split("?")[0];
-      console.log(`[RKZ] ✅ LI Lead score ${quality} | URL: ${profileUrl}`);
-      leads.push({
-        postText,
-        posterName: nameEl ? nameEl.innerText.trim() : "Unknown",
-        profileUrl,
-        quality, element: post
-      });
+      leads.push({ postText, posterName: nameEl ? nameEl.innerText.trim() : "Unknown", profileUrl, quality, element: post });
     });
     return leads;
   }
@@ -304,7 +280,7 @@ const profileUrl = linkEl ? linkEl.href.split("?")[0] : window.location.href.spl
     ].join(", ")).forEach(btn => { try { btn.click(); } catch(e) {} });
 
     const seenUrns = new Set();
-    const postEls = [];
+    const postEls  = [];
     document.querySelectorAll("[data-urn]").forEach(el => {
       const urn = el.getAttribute("data-urn") || "";
       if (!urn.startsWith("urn:li:activity") && !urn.startsWith("urn:li:ugcPost") && !urn.startsWith("urn:li:share")) return;
@@ -342,12 +318,7 @@ const profileUrl = linkEl ? linkEl.href.split("?")[0] : window.location.href.spl
         post.querySelector(".feed-shared-actor__container-link");
 
       const profileUrl = linkEl ? linkEl.href.split("?")[0] : window.location.href.split("?")[0];
-      console.log(`[RKZ] ✅ LI Group lead score ${quality} | URL: ${profileUrl}`);
-      leads.push({
-        postText,
-        posterName: nameEl ? nameEl.innerText.trim() : "Unknown",
-        profileUrl, quality, element: post
-      });
+      leads.push({ postText, posterName: nameEl ? nameEl.innerText.trim() : "Unknown", profileUrl, quality, element: post });
     });
     return leads;
   }
@@ -357,11 +328,9 @@ const profileUrl = linkEl ? linkEl.href.split("?")[0] : window.location.href.spl
     const leads = [];
     document.querySelectorAll(["article", "div._aabd._aa8k._aanf"].join(", ")).forEach(post => {
       const textEl =
-        post.querySelector("div._a9zs h1") ||
-        post.querySelector("div._a9zr span") ||
+        post.querySelector("div._a9zs h1") || post.querySelector("div._a9zr span") ||
         post.querySelector("h1._ap3a") ||
-        post.querySelector("span._ap3a._aaco._aacu._aacx._aad7._aade") ||
-        post.querySelector("h1");
+        post.querySelector("span._ap3a._aaco._aacu._aacx._aad7._aade") || post.querySelector("h1");
 
       const postText = textEl ? textEl.innerText.trim() : "";
       if (!postText) return;
@@ -377,12 +346,7 @@ const profileUrl = linkEl ? linkEl.href.split("?")[0] : window.location.href.spl
         post.querySelector("header a");
 
       const profileUrl = nameEl ? nameEl.href.split("?")[0] : window.location.href.split("?")[0];
-      console.log(`[RKZ] ✅ IG Lead score ${quality} | URL: ${profileUrl}`);
-      leads.push({
-        postText,
-        posterName: nameEl ? nameEl.innerText.trim() : "Unknown",
-        profileUrl, quality, element: post
-      });
+      leads.push({ postText, posterName: nameEl ? nameEl.innerText.trim() : "Unknown", profileUrl, quality, element: post });
     });
     return leads;
   }
@@ -395,8 +359,7 @@ const profileUrl = linkEl ? linkEl.href.split("?")[0] : window.location.href.spl
       "[data-testid='post-container']", ".Post", "div[data-fullname]",
     ].join(", ")).forEach(post => {
       const titleEl =
-        post.querySelector("[slot='title']") ||
-        post.querySelector("a[slot='full-post-link']") ||
+        post.querySelector("[slot='title']") || post.querySelector("a[slot='full-post-link']") ||
         post.querySelector("h3") || post.querySelector("h1");
       const bodyEl =
         post.querySelector("[data-click-id='text'] p") ||
@@ -415,7 +378,6 @@ const profileUrl = linkEl ? linkEl.href.split("?")[0] : window.location.href.spl
         post.querySelector("[data-testid='post_author_link']") ||
         post.querySelector("span[slot='authorName']");
 
-      // For Reddit: build full profile URL from author href
       let profileUrl = "";
       if (authorEl?.href) {
         profileUrl = authorEl.href.split("?")[0];
@@ -425,17 +387,55 @@ const profileUrl = linkEl ? linkEl.href.split("?")[0] : window.location.href.spl
         profileUrl = window.location.href.split("?")[0];
       }
 
-      console.log(`[RKZ] ✅ Reddit Lead score ${quality} | URL: ${profileUrl}`);
-      leads.push({
-        postText,
-        posterName: authorEl ? authorEl.innerText.trim() : "Unknown",
-        profileUrl, quality, element: post
-      });
+      leads.push({ postText, posterName: authorEl ? authorEl.innerText.trim() : "Unknown", profileUrl, quality, element: post });
     });
     return leads;
   }
 
-  // ─── GOOGLE MAPS SCRAPER ─────────────────────────────────────────────────
+  // ─── GOOGLE MAPS SCRAPER (UPDATED) ───────────────────────────────────────
+  function extractReviewCount(listing) {
+    // Try aria-label: "4.8 stars 123 reviews"
+    const ratingEl = listing.querySelector("span[aria-label*='star'], span[aria-label*='review']");
+    if (ratingEl) {
+      const ariaLabel = ratingEl.getAttribute("aria-label") || "";
+      const match = ariaLabel.match(/(\d[\d,]*)\s*review/i);
+      if (match) return parseInt(match[1].replace(/,/g, ""), 10);
+    }
+    // Fallback: text in parentheses "(2,456)"
+    const reviewEl = listing.querySelector(".UY7F9, .MW4etd");
+    if (reviewEl) {
+      const txt = reviewEl.innerText.replace(/[(),\s]/g, "");
+      const num = parseInt(txt);
+      if (!isNaN(num) && num > 0) return num;
+    }
+    return 0;
+  }
+
+  function extractWebsiteFromListing(listing) {
+    // Website button is sometimes visible in list view
+    const websiteEl =
+      listing.querySelector("a[data-value='Website']") ||
+      listing.querySelector("a[aria-label*='website' i]") ||
+      listing.querySelector("a[aria-label*='Visit' i]");
+    return websiteEl ? websiteEl.href : "";
+  }
+
+  function extractCategoryAndAddress(listing) {
+    // W4Efsd spans contain: category · address · hours
+    const spans = listing.querySelectorAll(".W4Efsd span, .fontBodyMedium span");
+    let category = "";
+    let address  = "";
+    const spanTexts = Array.from(spans).map(s => s.innerText?.trim()).filter(t => t && t !== "·" && t.length > 1);
+
+    if (spanTexts.length > 0) category = spanTexts[0];
+    // Address usually contains a number or common street words
+    for (const t of spanTexts) {
+      if (/\d/.test(t) && t.length > 5) { address = t; break; }
+    }
+
+    return { category, address };
+  }
+
   function scrapeGoogleMaps() {
     const leads = [];
 
@@ -451,22 +451,32 @@ const profileUrl = linkEl ? linkEl.href.split("?")[0] : window.location.href.spl
       if (processedPosts.has(key)) return;
       processedPosts.add(key);
 
-      // For Maps: get the place URL from the listing link
-      // Fixed: use relative path selector too, and keep query params (CID is in them)
       const linkEl = listing.querySelector("a[href*='/maps/place']")
                   || listing.querySelector("a[href*='google.com/maps']")
                   || listing.querySelector("a[href]");
       const profileUrl = linkEl ? linkEl.href : window.location.href;
 
-      console.log(`[RKZ] ✅ Maps Lead score ${quality} | URL: ${profileUrl}`);
+      // New: extract enrichment data from listing
+      const reviewCount = extractReviewCount(listing);
+      const website     = extractWebsiteFromListing(listing);
+      const { category, address } = extractCategoryAndAddress(listing);
+
+      console.log(`[RKZ] ✅ Maps Lead score ${quality} | ${nameEl?.innerText?.trim()} | Reviews: ${reviewCount} | URL: ${profileUrl}`);
+
       leads.push({
         postText,
         posterName: nameEl ? nameEl.innerText.trim() : "Unknown",
-        profileUrl, quality, element: listing
+        profileUrl,
+        quality,
+        element: listing,
+        reviewCount,
+        website,
+        category,
+        address
       });
     });
 
-    // Reviews
+    // Reviews scraper (unchanged)
     document.querySelectorAll(".jftiEf, [data-review-id]").forEach(review => {
       const textEl = review.querySelector(".wiI7pd") || review.querySelector(".MyEned span");
       const postText = textEl ? textEl.innerText.trim() : "";
@@ -481,7 +491,12 @@ const profileUrl = linkEl ? linkEl.href.split("?")[0] : window.location.href.spl
         postText,
         posterName: nameEl ? nameEl.innerText.trim() : "Unknown",
         profileUrl: window.location.href.split("?")[0],
-        quality, element: review
+        quality,
+        element: review,
+        reviewCount: 0,
+        website: "",
+        category: "",
+        address: ""
       });
     });
 
@@ -511,12 +526,17 @@ const profileUrl = linkEl ? linkEl.href.split("?")[0] : window.location.href.spl
 
     leads.forEach(lead => {
       chrome.runtime.sendMessage({
-        action:     "sendLead",
+        action:      "sendLead",
         platform,
-        postText:   lead.postText,
-        posterName: lead.posterName,
-        profileUrl: lead.profileUrl,
-        quality:    lead.quality
+        postText:    lead.postText,
+        posterName:  lead.posterName,
+        profileUrl:  lead.profileUrl,
+        quality:     lead.quality,
+        // Maps-specific fields
+        reviewCount: lead.reviewCount || 0,
+        website:     lead.website     || "",
+        category:    lead.category    || "",
+        address:     lead.address     || ""
       });
     });
 

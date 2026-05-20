@@ -56,8 +56,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if ((msg.platform || "").includes("Google Maps")) {
 
     chrome.storage.sync.get(["agentUrl", "webhook"], data => {
-      const agentUrl  = (data.agentUrl  || "").trim();
-      const sheetUrl  = (data.webhook   || "").trim();
+      const agentUrl = (data.agentUrl || "").trim();
+      const sheetUrl = (data.webhook  || "").trim();
 
       if (!agentUrl || !agentUrl.startsWith("http")) {
         console.error("[RKZ] ❌ No agent URL set — go to Controls and save Agent URL");
@@ -65,24 +65,36 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
 
       const mapsPayload = {
-        businessName: msg.posterName || "Unknown",
-        website:      "",
-        category:     "",
-        address:      "",
-        profileUrl:   msg.profileUrl || "",
+        businessName: msg.posterName  || "Unknown",
+        website:      msg.website     || "",
+        category:     msg.category    || "",
+        address:      msg.address     || "",
+        reviewCount:  msg.reviewCount || "",
+        profileUrl:   msg.profileUrl  || "",
         sheetUrl:     sheetUrl
       };
 
       console.log("[RKZ] 🗺 Maps lead → /enrich_maps:", mapsPayload.businessName);
 
+      // ── 3 minute timeout — Qwen needs time ───────────────────
+      const controller = new AbortController();
+      const timeout = setTimeout(() => {
+        controller.abort();
+        console.warn("[RKZ] ⏱ Maps enrichment timed out after 3 min:", mapsPayload.businessName);
+      }, 180000);
+
       fetch(agentUrl + "/enrich_maps", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify(mapsPayload)
+        body:    JSON.stringify(mapsPayload),
+        signal:  controller.signal
       })
-        .then(res => res.json())
-        .then(result => console.log("[RKZ] ✅ Maps enrichment done:", result.businessName))
-        .catch(err  => console.error("[RKZ] ❌ Maps enrichment failed:", err.message));
+        .then(res => { clearTimeout(timeout); return res.json(); })
+        .then(result => console.log("[RKZ] ✅ Maps enrichment done:", result.businessName, "| Type:", result.qualification_status))
+        .catch(err  => {
+          clearTimeout(timeout);
+          console.error("[RKZ] ❌ Maps enrichment failed:", err.message);
+        });
     });
 
     return;
@@ -90,8 +102,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   // ─── Route: Social → /analyze ────────────────────────────────
   chrome.storage.sync.get(["agentUrl", "webhook"], data => {
-    const agentUrl   = (data.agentUrl  || "").trim();
-    const webhookUrl = (data.webhook   || "").trim();
+    const agentUrl   = (data.agentUrl || "").trim();
+    const webhookUrl = (data.webhook  || "").trim();
 
     if (!agentUrl || !agentUrl.startsWith("http")) {
       console.error("[RKZ] ❌ No agent URL set — go to Controls and save Agent URL");
@@ -110,12 +122,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
     console.log("[RKZ] Sending to AI agent:", payload.posterName, "| score:", payload.quality);
 
+    // ── 3 minute timeout — Qwen needs time ───────────────────
+    const controller = new AbortController();
+    const timeout = setTimeout(() => {
+      controller.abort();
+      console.warn("[RKZ] ⏱ Social analysis timed out after 3 min:", payload.posterName);
+    }, 180000);
+
     fetch(agentUrl + "/analyze", {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify(payload)
+      body:    JSON.stringify(payload),
+      signal:  controller.signal
     })
-      .then(res => res.json())
+      .then(res => { clearTimeout(timeout); return res.json(); })
       .then(aiData => {
         const score = aiData.lead_score_1_10 || aiData.leadScore || payload.quality || 0;
         console.log(`[RKZ] ✅ Agent processed — Score: ${score}`);
@@ -132,6 +152,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           owner_name_or_decision_maker: aiData.owner_name_or_decision_maker             || payload.posterName || "Unknown",
           need_summary:                 aiData.need_summary                             || "",
           lead_score_1_10:              score,
+          qualification_status:         aiData.qualification_status                     || "standard",
           comment_for_post:             aiData.comment_for_post                         || "",
           email_subject:                aiData.email_subject                            || "",
           email_body:                   aiData.email_body                               || "",
@@ -149,9 +170,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         })
           .then(res => res.json())
           .then(result => console.log("[RKZ] ✅ Google Sheet updated:", result))
-          .catch(err  => console.error("[RKZ] ❌ Webhook/Sheet write failed:", err.message));
+          .catch(err  => console.error("[RKZ] ❌ Sheet write failed:", err.message));
       })
       .catch(err => {
+        clearTimeout(timeout);
         console.warn("[RKZ] ⚠ Agent not reachable:", err.message);
 
         if (!webhookUrl || !webhookUrl.startsWith("http")) return;
@@ -163,6 +185,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           owner_name_or_decision_maker: payload.posterName || "Unknown",
           need_summary:                 postText.substring(0, 200),
           lead_score_1_10:              payload.quality    || 0,
+          qualification_status:         "standard",
           comment_for_post:             "",
           email_subject:                "",
           email_body:                   "",
