@@ -5,7 +5,6 @@
 
   const MIN_SCORE = 5;
 
-  // ─── Platform Detection ───────────────────────────────────────────────────
   function detectPlatform() {
     const url = window.location.href;
     if (url.includes("linkedin.com/groups")) return "LinkedIn Groups";
@@ -17,22 +16,15 @@
     return "Unknown";
   }
 
-  // ─── Extract Facebook Profile URL ────────────────────────────────────────
   function extractFacebookProfileUrl(postEl) {
     const anchors = postEl.querySelectorAll("a[href]");
     for (const a of anchors) {
       const href = a.href || "";
       if (
-        href.includes("/groups/") ||
-        href.includes("/photo") ||
-        href.includes("/video") ||
-        href.includes("/hashtag/") ||
-        href.includes("?__cft__") ||
-        href.includes("reaction") ||
-        href.includes("/events/") ||
-        href.includes("/marketplace/") ||
-        href.includes("l.facebook.com") ||
-        href === "" || href === "#"
+        href.includes("/groups/") || href.includes("/photo") || href.includes("/video") ||
+        href.includes("/hashtag/") || href.includes("?__cft__") || href.includes("reaction") ||
+        href.includes("/events/") || href.includes("/marketplace/") ||
+        href.includes("l.facebook.com") || href === "" || href === "#"
       ) continue;
       if (
         href.match(/facebook\.com\/[a-zA-Z0-9._]+\/?$/) ||
@@ -45,7 +37,6 @@
     return window.location.href.split("?")[0];
   }
 
-  // ─── Scroll Container ─────────────────────────────────────────────────────
   function getScrollContainer() {
     const platform = detectPlatform();
     if (platform === "LinkedIn" || platform === "LinkedIn Groups") {
@@ -86,7 +77,6 @@
     }
   }
 
-  // ─── Intent Keywords ──────────────────────────────────────────────────────
   const INTENT_KEYWORDS = [
     "looking for", "need help", "need a", "anyone recommend", "can anyone",
     "struggling", "advice", "suggest", "hire", "want to", "how do i",
@@ -136,7 +126,6 @@
     });
   }
 
-  // ─── Comment Poster — Facebook ────────────────────────────────────────────
   function postCommentFacebook(postEl, commentText) {
     try {
       const commentBtn = postEl.querySelector('[aria-label*="comment"], [aria-label*="Comment"]');
@@ -158,7 +147,6 @@
     } catch(e) { console.log("[RKZ] FB comment error:", e.message); }
   }
 
-  // ─── Comment Poster — LinkedIn ────────────────────────────────────────────
   function postCommentLinkedIn(postEl, commentText) {
     try {
       const btn = postEl.querySelector('button[aria-label*="comment"], .comment-button');
@@ -179,15 +167,12 @@
     } catch(e) { console.log("[RKZ] LI comment error:", e.message); }
   }
 
-  // ─── FACEBOOK SCRAPER ─────────────────────────────────────────────────────
   function scrapeFacebook() {
     const leads = [];
     const postSelectors = ['div[role="article"]', 'div[data-pagelet="FeedUnit"]', 'div.x1yztbdb'].join(', ');
-
     document.querySelectorAll(postSelectors).forEach(post => {
       console.log("[RKZ] 🔎 FB article found, checking text...");
       expandSeeMore(post);
-
       let postText = '';
       const textSelectors = [
         'div[data-ad-comet-preview="message"]', 'div[data-ad-preview="message"]',
@@ -203,14 +188,12 @@
           }
         }
       }
-
       if (!postText || postText.length < 30) return;
       const quality = scorePost(postText);
       if (quality < MIN_SCORE) return;
       const key = postText.substring(0, 60);
       if (processedPosts.has(key)) return;
       processedPosts.add(key);
-
       let posterName = 'Unknown';
       const nameSelectors = ['h2 a', 'h3 a', 'strong a', 'a[role="link"][tabindex="0"]', 'span > a[role="link"]', 'h5 a', 'h4 a'];
       for (const sel of nameSelectors) {
@@ -219,23 +202,19 @@
           posterName = found.innerText.trim(); break;
         }
       }
-
       const linkEl = post.querySelector("a[href*='/posts/']") || post.querySelector("a[href*='story_fbid']") || post.querySelector("a[href*='permalink']");
       const profileUrl = linkEl ? linkEl.href.split("?")[0] : window.location.href.split("?")[0];
-
       leads.push({ postText, posterName, profileUrl, quality, element: post });
     });
     return leads;
   }
 
-  // ─── LINKEDIN SCRAPER ─────────────────────────────────────────────────────
   function scrapeLinkedIn() {
     const leads = [];
     document.querySelectorAll([
       ".feed-shared-inline-show-more-text__see-more-less-toggle",
       "button[aria-label='see more']"
     ].join(", ")).forEach(btn => { try { btn.click(); } catch(e) {} });
-
     document.querySelectorAll([
       ".feed-shared-update-v2", ".occludable-update", "li[data-urn]", "div[data-urn]",
     ].join(", ")).forEach(post => {
@@ -245,7 +224,6 @@
         post.querySelector(".feed-shared-text span[dir='ltr']") ||
         post.querySelector(".update-components-text") ||
         post.querySelector(".feed-shared-text");
-
       const postText = textEl ? textEl.innerText.trim() : "";
       if (!postText) return;
       const quality = scorePost(postText);
@@ -253,32 +231,27 @@
       const key = postText.substring(0, 60);
       if (processedPosts.has(key)) return;
       processedPosts.add(key);
-
       const nameEl =
         post.querySelector(".feed-shared-actor__name") ||
         post.querySelector(".update-components-actor__name") ||
         post.querySelector("span.hoverable-link-text span[aria-hidden='true']");
-
       const linkEl =
         post.querySelector(".feed-shared-actor__container-link") ||
         post.querySelector(".update-components-actor__container-link") ||
         post.querySelector("a[href*='/in/']") ||
         post.querySelector("a[href*='/company/']");
-
       const profileUrl = linkEl ? linkEl.href.split("?")[0] : window.location.href.split("?")[0];
       leads.push({ postText, posterName: nameEl ? nameEl.innerText.trim() : "Unknown", profileUrl, quality, element: post });
     });
     return leads;
   }
 
-  // ─── LINKEDIN GROUPS SCRAPER ──────────────────────────────────────────────
   function scrapeLinkedInGroups() {
     const leads = [];
     document.querySelectorAll([
       ".feed-shared-inline-show-more-text__see-more-less-toggle",
       "button[aria-label='see more']"
     ].join(", ")).forEach(btn => { try { btn.click(); } catch(e) {} });
-
     const seenUrns = new Set();
     const postEls  = [];
     document.querySelectorAll("[data-urn]").forEach(el => {
@@ -288,7 +261,6 @@
       if (seenUrns.has(urn)) return;
       seenUrns.add(urn); postEls.push(el);
     });
-
     postEls.forEach(post => {
       let postText = "";
       for (const sel of [
@@ -306,24 +278,20 @@
       const key = postText.substring(0, 60);
       if (processedPosts.has(key)) return;
       processedPosts.add(key);
-
       const nameEl =
         post.querySelector(".feed-shared-actor__name span[aria-hidden='true']") ||
         post.querySelector(".update-components-actor__name span[aria-hidden='true']") ||
         post.querySelector("span.hoverable-link-text span[aria-hidden='true']");
-
       const linkEl =
         post.querySelector("a[href*='/in/']") ||
         post.querySelector("a[href*='/company/']") ||
         post.querySelector(".feed-shared-actor__container-link");
-
       const profileUrl = linkEl ? linkEl.href.split("?")[0] : window.location.href.split("?")[0];
       leads.push({ postText, posterName: nameEl ? nameEl.innerText.trim() : "Unknown", profileUrl, quality, element: post });
     });
     return leads;
   }
 
-  // ─── INSTAGRAM SCRAPER ────────────────────────────────────────────────────
   function scrapeInstagram() {
     const leads = [];
     document.querySelectorAll(["article", "div._aabd._aa8k._aanf"].join(", ")).forEach(post => {
@@ -331,7 +299,6 @@
         post.querySelector("div._a9zs h1") || post.querySelector("div._a9zr span") ||
         post.querySelector("h1._ap3a") ||
         post.querySelector("span._ap3a._aaco._aacu._aacx._aad7._aade") || post.querySelector("h1");
-
       const postText = textEl ? textEl.innerText.trim() : "";
       if (!postText) return;
       const quality = scorePost(postText);
@@ -339,19 +306,16 @@
       const key = postText.substring(0, 60);
       if (processedPosts.has(key)) return;
       processedPosts.add(key);
-
       const nameEl =
         post.querySelector("header a.x1i10hfl") ||
         post.querySelector("header a[role='link']") ||
         post.querySelector("header a");
-
       const profileUrl = nameEl ? nameEl.href.split("?")[0] : window.location.href.split("?")[0];
       leads.push({ postText, posterName: nameEl ? nameEl.innerText.trim() : "Unknown", profileUrl, quality, element: post });
     });
     return leads;
   }
 
-  // ─── REDDIT SCRAPER ───────────────────────────────────────────────────────
   function scrapeReddit() {
     const leads = [];
     document.querySelectorAll([
@@ -364,7 +328,6 @@
       const bodyEl =
         post.querySelector("[data-click-id='text'] p") ||
         post.querySelector("div[slot='text-body'] p");
-
       const postText = [titleEl?.innerText?.trim(), bodyEl?.innerText?.trim()].filter(Boolean).join(" — ");
       if (!postText) return;
       const quality = scorePost(postText);
@@ -372,12 +335,10 @@
       const key = postText.substring(0, 60);
       if (processedPosts.has(key)) return;
       processedPosts.add(key);
-
       const authorEl =
         post.querySelector("a[href*='/user/']") ||
         post.querySelector("[data-testid='post_author_link']") ||
         post.querySelector("span[slot='authorName']");
-
       let profileUrl = "";
       if (authorEl?.href) {
         profileUrl = authorEl.href.split("?")[0];
@@ -386,22 +347,18 @@
       } else {
         profileUrl = window.location.href.split("?")[0];
       }
-
       leads.push({ postText, posterName: authorEl ? authorEl.innerText.trim() : "Unknown", profileUrl, quality, element: post });
     });
     return leads;
   }
 
-  // ─── GOOGLE MAPS SCRAPER (UPDATED) ───────────────────────────────────────
   function extractReviewCount(listing) {
-    // Try aria-label: "4.8 stars 123 reviews"
     const ratingEl = listing.querySelector("span[aria-label*='star'], span[aria-label*='review']");
     if (ratingEl) {
       const ariaLabel = ratingEl.getAttribute("aria-label") || "";
       const match = ariaLabel.match(/(\d[\d,]*)\s*review/i);
       if (match) return parseInt(match[1].replace(/,/g, ""), 10);
     }
-    // Fallback: text in parentheses "(2,456)"
     const reviewEl = listing.querySelector(".UY7F9, .MW4etd");
     if (reviewEl) {
       const txt = reviewEl.innerText.replace(/[(),\s]/g, "");
@@ -412,7 +369,6 @@
   }
 
   function extractWebsiteFromListing(listing) {
-    // Website button is sometimes visible in list view
     const websiteEl =
       listing.querySelector("a[data-value='Website']") ||
       listing.querySelector("a[aria-label*='website' i]") ||
@@ -420,63 +376,48 @@
     return websiteEl ? websiteEl.href : "";
   }
 
+  // ─── FIX: filter out rating/number-only spans before picking category ─────
   function extractCategoryAndAddress(listing) {
-    // W4Efsd spans contain: category · address · hours
     const spans = listing.querySelectorAll(".W4Efsd span, .fontBodyMedium span");
     let category = "";
     let address  = "";
-    const spanTexts = Array.from(spans).map(s => s.innerText?.trim()).filter(t => t && t !== "·" && t.length > 1);
-
+    const spanTexts = Array.from(spans)
+      .map(s => s.innerText?.trim())
+      .filter(t =>
+        t &&
+        t !== "·" &&
+        t.length > 2 &&
+        !/^[\d\s\.\(\),★·]+$/.test(t)
+      );
     if (spanTexts.length > 0) category = spanTexts[0];
-    // Address usually contains a number or common street words
     for (const t of spanTexts) {
       if (/\d/.test(t) && t.length > 5) { address = t; break; }
     }
-
     return { category, address };
   }
 
   function scrapeGoogleMaps() {
     const leads = [];
-
     document.querySelectorAll('div[role="feed"] > div, .Nv2PK, [data-result-index]').forEach(listing => {
       const nameEl = listing.querySelector(".qBF1Pd, .fontHeadlineSmall, h3");
       const descEl = listing.querySelector(".W4Efsd, .fontBodyMedium");
       const postText = [nameEl?.innerText?.trim(), descEl?.innerText?.trim()].filter(Boolean).join(" — ");
       if (!postText || postText.length < 30) return;
-
       const quality = scorePost(postText);
       if (quality < MIN_SCORE) return;
       const key = postText.substring(0, 60);
       if (processedPosts.has(key)) return;
       processedPosts.add(key);
-
       const linkEl = listing.querySelector("a[href*='/maps/place']")
                   || listing.querySelector("a[href*='google.com/maps']")
                   || listing.querySelector("a[href]");
       const profileUrl = linkEl ? linkEl.href : window.location.href;
-
-      // New: extract enrichment data from listing
       const reviewCount = extractReviewCount(listing);
       const website     = extractWebsiteFromListing(listing);
       const { category, address } = extractCategoryAndAddress(listing);
-
-      console.log(`[RKZ] ✅ Maps Lead score ${quality} | ${nameEl?.innerText?.trim()} | Reviews: ${reviewCount} | URL: ${profileUrl}`);
-
-      leads.push({
-        postText,
-        posterName: nameEl ? nameEl.innerText.trim() : "Unknown",
-        profileUrl,
-        quality,
-        element: listing,
-        reviewCount,
-        website,
-        category,
-        address
-      });
+      console.log(`[RKZ] ✅ Maps Lead | ${nameEl?.innerText?.trim()} | Cat: ${category} | Addr: ${address} | Reviews: ${reviewCount}`);
+      leads.push({ postText, posterName: nameEl ? nameEl.innerText.trim() : "Unknown", profileUrl, quality, element: listing, reviewCount, website, category, address });
     });
-
-    // Reviews scraper (unchanged)
     document.querySelectorAll(".jftiEf, [data-review-id]").forEach(review => {
       const textEl = review.querySelector(".wiI7pd") || review.querySelector(".MyEned span");
       const postText = textEl ? textEl.innerText.trim() : "";
@@ -487,23 +428,11 @@
       if (processedPosts.has(key)) return;
       processedPosts.add(key);
       const nameEl = review.querySelector(".d4r55") || review.querySelector(".TSUbDb");
-      leads.push({
-        postText,
-        posterName: nameEl ? nameEl.innerText.trim() : "Unknown",
-        profileUrl: window.location.href.split("?")[0],
-        quality,
-        element: review,
-        reviewCount: 0,
-        website: "",
-        category: "",
-        address: ""
-      });
+      leads.push({ postText, posterName: nameEl ? nameEl.innerText.trim() : "Unknown", profileUrl: window.location.href.split("?")[0], quality, element: review, reviewCount: 0, website: "", category: "", address: "" });
     });
-
     return leads;
   }
 
-  // ─── Scrape + Send ────────────────────────────────────────────────────────
   function scrapeAndSend() {
     const platform = detectPlatform();
     let leads = [];
@@ -518,12 +447,8 @@
         console.log("[RKZ] Unsupported page:", window.location.href);
         return 0;
     }
-
     leads.sort((a, b) => b.quality - a.quality);
-    if (leads.length > 0) {
-      console.log(`[RKZ] 🚀 Sending ${leads.length} lead(s) from ${platform}`);
-    }
-
+    if (leads.length > 0) console.log(`[RKZ] 🚀 Sending ${leads.length} lead(s) from ${platform}`);
     leads.forEach(lead => {
       chrome.runtime.sendMessage({
         action:      "sendLead",
@@ -532,23 +457,19 @@
         posterName:  lead.posterName,
         profileUrl:  lead.profileUrl,
         quality:     lead.quality,
-        // Maps-specific fields
         reviewCount: lead.reviewCount || 0,
         website:     lead.website     || "",
         category:    lead.category    || "",
         address:     lead.address     || ""
       });
     });
-
     return leads.length;
   }
 
-  // ─── Auto-scroll ──────────────────────────────────────────────────────────
   function startAutoScroll() {
     if (isScrolling) return;
     isScrolling = true;
     console.log("[RKZ] ▶ Auto-scroll started");
-
     function humanScroll() {
       if (!isScrolling) return;
       const container = getScrollContainer();
@@ -571,7 +492,6 @@
     console.log("[RKZ] ⏹ Auto-scroll stopped");
   }
 
-  // ─── Message Listener ─────────────────────────────────────────────────────
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.action === "startScroll") {
       startAutoScroll(); sendResponse({ success: true }); return true;
