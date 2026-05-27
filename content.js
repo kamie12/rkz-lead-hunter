@@ -3,8 +3,9 @@
   let autoScrollTimeout = null;
   let isScrolling = false;
 
-  const MIN_SCORE = 5;
+  const MIN_SCORE_SOCIAL = 5;
 
+  // ─── Platform Detection ───────────────────────────────────────────────────
   function detectPlatform() {
     const url = window.location.href;
     if (url.includes("linkedin.com/groups")) return "LinkedIn Groups";
@@ -16,16 +17,28 @@
     return "Unknown";
   }
 
+  // ─── Extract Facebook Profile URL (proper, not post URL) ─────────────────
   function extractFacebookProfileUrl(postEl) {
     const anchors = postEl.querySelectorAll("a[href]");
     for (const a of anchors) {
       const href = a.href || "";
       if (
-        href.includes("/groups/") || href.includes("/photo") || href.includes("/video") ||
-        href.includes("/hashtag/") || href.includes("?__cft__") || href.includes("reaction") ||
-        href.includes("/events/") || href.includes("/marketplace/") ||
-        href.includes("l.facebook.com") || href === "" || href === "#"
+        href.includes("/groups/") ||
+        href.includes("/photo")   ||
+        href.includes("/video")   ||
+        href.includes("/hashtag/")||
+        href.includes("?__cft__") ||
+        href.includes("reaction") ||
+        href.includes("/events/") ||
+        href.includes("/marketplace/") ||
+        href.includes("l.facebook.com") ||
+        href.includes("/posts/")  ||
+        href.includes("permalink")||
+        href.includes("story_fbid") ||
+        href === "" || href === "#"
       ) continue;
+
+      // Valid profile patterns
       if (
         href.match(/facebook\.com\/[a-zA-Z0-9._]+\/?$/) ||
         href.includes("facebook.com/profile.php") ||
@@ -37,6 +50,7 @@
     return window.location.href.split("?")[0];
   }
 
+  // ─── Scroll containers ───────────────────────────────────────────────────
   function getScrollContainer() {
     const platform = detectPlatform();
     if (platform === "LinkedIn" || platform === "LinkedIn Groups") {
@@ -77,6 +91,7 @@
     }
   }
 
+  // ─── Social-lead scorer ──────────────────────────────────────────────────
   const INTENT_KEYWORDS = [
     "looking for", "need help", "need a", "anyone recommend", "can anyone",
     "struggling", "advice", "suggest", "hire", "want to", "how do i",
@@ -117,6 +132,24 @@
     return Math.min(score, 10);
   }
 
+  // ─── Maps category whitelist (mirrors backend) ───────────────────────────
+  const MAPS_TARGET_CATEGORIES = [
+    "plumber","plumbing","hvac","heating","air conditioning","cooling",
+    "roofing","roofer","electrician","electrical","landscaper","landscaping",
+    "lawn","tree service","painter","painting","remodeling","remodel",
+    "renovation","contractor","construction","handyman","pest control",
+    "carpet cleaning","house cleaning","cleaning service","garage door",
+    "fence","fencing","concrete","paving","pool service","pool cleaning",
+    "window cleaning","gutter","appliance repair","locksmith","moving",
+    "movers","junk removal","pressure washing","chimney","siding","septic",
+    "well drilling","solar","insulation","auto repair","mechanic","towing",
+    "auto detailing"
+  ];
+  function isMapsTargetCategory(category, name) {
+    const hay = `${category} ${name}`.toLowerCase();
+    return MAPS_TARGET_CATEGORIES.some(c => hay.includes(c));
+  }
+
   function rand(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
 
   function expandSeeMore(post) {
@@ -126,6 +159,7 @@
     });
   }
 
+  // ─── Comment posters (unchanged, just kept) ──────────────────────────────
   function postCommentFacebook(postEl, commentText) {
     try {
       const commentBtn = postEl.querySelector('[aria-label*="comment"], [aria-label*="Comment"]');
@@ -167,17 +201,22 @@
     } catch(e) { console.log("[RKZ] LI comment error:", e.message); }
   }
 
+  // ─── FACEBOOK SCRAPER ────────────────────────────────────────────────────
   function scrapeFacebook() {
     const leads = [];
-    const postSelectors = ['div[role="article"]', 'div[data-pagelet="FeedUnit"]', 'div.x1yztbdb'].join(', ');
+    const postSelectors = ['div[role="article"]','div[data-pagelet="FeedUnit"]','div.x1yztbdb'].join(', ');
+
     document.querySelectorAll(postSelectors).forEach(post => {
-      console.log("[RKZ] 🔎 FB article found, checking text...");
       expandSeeMore(post);
+
       let postText = '';
       const textSelectors = [
-        'div[data-ad-comet-preview="message"]', 'div[data-ad-preview="message"]',
-        '[data-testid="post_message"]', 'div[dir="auto"] span[dir="auto"]',
-        'div[dir="auto"] > div > span', 'div[dir="auto"]',
+        'div[data-ad-comet-preview="message"]',
+        'div[data-ad-preview="message"]',
+        '[data-testid="post_message"]',
+        'div[dir="auto"] span[dir="auto"]',
+        'div[dir="auto"] > div > span',
+        'div[dir="auto"]'
       ];
       for (const sel of textSelectors) {
         const found = post.querySelector(sel);
@@ -188,35 +227,43 @@
           }
         }
       }
+
       if (!postText || postText.length < 30) return;
       const quality = scorePost(postText);
-      if (quality < MIN_SCORE) return;
+      if (quality < MIN_SCORE_SOCIAL) return;
       const key = postText.substring(0, 60);
       if (processedPosts.has(key)) return;
       processedPosts.add(key);
+
       let posterName = 'Unknown';
-      const nameSelectors = ['h2 a', 'h3 a', 'strong a', 'a[role="link"][tabindex="0"]', 'span > a[role="link"]', 'h5 a', 'h4 a'];
+      const nameSelectors = ['h2 a','h3 a','strong a','a[role="link"][tabindex="0"]','span > a[role="link"]','h5 a','h4 a'];
       for (const sel of nameSelectors) {
         const found = post.querySelector(sel);
         if (found?.innerText?.trim() && found.innerText.trim() !== 'Like') {
           posterName = found.innerText.trim(); break;
         }
       }
-      const linkEl = post.querySelector("a[href*='/posts/']") || post.querySelector("a[href*='story_fbid']") || post.querySelector("a[href*='permalink']");
-      const profileUrl = linkEl ? linkEl.href.split("?")[0] : window.location.href.split("?")[0];
+
+      // FIXED: use the dedicated profile-URL extractor (not the post permalink)
+      const profileUrl = extractFacebookProfileUrl(post);
+
+      console.log(`[RKZ] ✅ FB Lead score ${quality} | ${posterName} | URL: ${profileUrl}`);
       leads.push({ postText, posterName, profileUrl, quality, element: post });
     });
     return leads;
   }
 
+  // ─── LINKEDIN SCRAPER ────────────────────────────────────────────────────
   function scrapeLinkedIn() {
     const leads = [];
     document.querySelectorAll([
       ".feed-shared-inline-show-more-text__see-more-less-toggle",
       "button[aria-label='see more']"
     ].join(", ")).forEach(btn => { try { btn.click(); } catch(e) {} });
+
     document.querySelectorAll([
-      ".feed-shared-update-v2", ".occludable-update", "li[data-urn]", "div[data-urn]",
+      ".feed-shared-update-v2", ".occludable-update",
+      "li[data-urn]", "div[data-urn]"
     ].join(", ")).forEach(post => {
       const textEl =
         post.querySelector(".feed-shared-inline-show-more-text span[dir='ltr']") ||
@@ -224,24 +271,32 @@
         post.querySelector(".feed-shared-text span[dir='ltr']") ||
         post.querySelector(".update-components-text") ||
         post.querySelector(".feed-shared-text");
+
       const postText = textEl ? textEl.innerText.trim() : "";
       if (!postText) return;
       const quality = scorePost(postText);
-      if (quality < MIN_SCORE) return;
+      if (quality < MIN_SCORE_SOCIAL) return;
       const key = postText.substring(0, 60);
       if (processedPosts.has(key)) return;
       processedPosts.add(key);
+
       const nameEl =
         post.querySelector(".feed-shared-actor__name") ||
         post.querySelector(".update-components-actor__name") ||
         post.querySelector("span.hoverable-link-text span[aria-hidden='true']");
+
       const linkEl =
         post.querySelector(".feed-shared-actor__container-link") ||
         post.querySelector(".update-components-actor__container-link") ||
         post.querySelector("a[href*='/in/']") ||
         post.querySelector("a[href*='/company/']");
+
       const profileUrl = linkEl ? linkEl.href.split("?")[0] : window.location.href.split("?")[0];
-      leads.push({ postText, posterName: nameEl ? nameEl.innerText.trim() : "Unknown", profileUrl, quality, element: post });
+      leads.push({
+        postText,
+        posterName: nameEl ? nameEl.innerText.trim() : "Unknown",
+        profileUrl, quality, element: post
+      });
     });
     return leads;
   }
@@ -252,8 +307,9 @@
       ".feed-shared-inline-show-more-text__see-more-less-toggle",
       "button[aria-label='see more']"
     ].join(", ")).forEach(btn => { try { btn.click(); } catch(e) {} });
+
     const seenUrns = new Set();
-    const postEls  = [];
+    const postEls = [];
     document.querySelectorAll("[data-urn]").forEach(el => {
       const urn = el.getAttribute("data-urn") || "";
       if (!urn.startsWith("urn:li:activity") && !urn.startsWith("urn:li:ugcPost") && !urn.startsWith("urn:li:share")) return;
@@ -261,178 +317,204 @@
       if (seenUrns.has(urn)) return;
       seenUrns.add(urn); postEls.push(el);
     });
+
     postEls.forEach(post => {
       let postText = "";
       for (const sel of [
         ".feed-shared-inline-show-more-text span[dir='ltr']",
         ".update-components-text span[dir='ltr']",
         ".feed-shared-text span[dir='ltr']",
-        ".update-components-text", ".feed-shared-text",
+        ".update-components-text", ".feed-shared-text"
       ]) {
         const el = post.querySelector(sel);
         if (el && el.innerText.trim().length >= 30) { postText = el.innerText.trim(); break; }
       }
       if (!postText) return;
       const quality = scorePost(postText);
-      if (quality < MIN_SCORE) return;
+      if (quality < MIN_SCORE_SOCIAL) return;
       const key = postText.substring(0, 60);
       if (processedPosts.has(key)) return;
       processedPosts.add(key);
+
       const nameEl =
         post.querySelector(".feed-shared-actor__name span[aria-hidden='true']") ||
         post.querySelector(".update-components-actor__name span[aria-hidden='true']") ||
         post.querySelector("span.hoverable-link-text span[aria-hidden='true']");
+
       const linkEl =
         post.querySelector("a[href*='/in/']") ||
         post.querySelector("a[href*='/company/']") ||
         post.querySelector(".feed-shared-actor__container-link");
+
       const profileUrl = linkEl ? linkEl.href.split("?")[0] : window.location.href.split("?")[0];
-      leads.push({ postText, posterName: nameEl ? nameEl.innerText.trim() : "Unknown", profileUrl, quality, element: post });
+      leads.push({
+        postText,
+        posterName: nameEl ? nameEl.innerText.trim() : "Unknown",
+        profileUrl, quality, element: post
+      });
     });
     return leads;
   }
 
+  // ─── INSTAGRAM SCRAPER ───────────────────────────────────────────────────
   function scrapeInstagram() {
     const leads = [];
     document.querySelectorAll(["article", "div._aabd._aa8k._aanf"].join(", ")).forEach(post => {
       const textEl =
-        post.querySelector("div._a9zs h1") || post.querySelector("div._a9zr span") ||
+        post.querySelector("div._a9zs h1") ||
+        post.querySelector("div._a9zr span") ||
         post.querySelector("h1._ap3a") ||
-        post.querySelector("span._ap3a._aaco._aacu._aacx._aad7._aade") || post.querySelector("h1");
+        post.querySelector("span._ap3a._aaco._aacu._aacx._aad7._aade") ||
+        post.querySelector("h1");
+
       const postText = textEl ? textEl.innerText.trim() : "";
       if (!postText) return;
       const quality = scorePost(postText);
-      if (quality < MIN_SCORE) return;
+      if (quality < MIN_SCORE_SOCIAL) return;
       const key = postText.substring(0, 60);
       if (processedPosts.has(key)) return;
       processedPosts.add(key);
+
       const nameEl =
         post.querySelector("header a.x1i10hfl") ||
         post.querySelector("header a[role='link']") ||
         post.querySelector("header a");
+
       const profileUrl = nameEl ? nameEl.href.split("?")[0] : window.location.href.split("?")[0];
-      leads.push({ postText, posterName: nameEl ? nameEl.innerText.trim() : "Unknown", profileUrl, quality, element: post });
+      leads.push({
+        postText,
+        posterName: nameEl ? nameEl.innerText.trim() : "Unknown",
+        profileUrl, quality, element: post
+      });
     });
     return leads;
   }
 
+  // ─── REDDIT SCRAPER ──────────────────────────────────────────────────────
   function scrapeReddit() {
     const leads = [];
     document.querySelectorAll([
       "shreddit-post", "article[data-testid='post-container']",
-      "[data-testid='post-container']", ".Post", "div[data-fullname]",
+      "[data-testid='post-container']", ".Post", "div[data-fullname]"
     ].join(", ")).forEach(post => {
       const titleEl =
-        post.querySelector("[slot='title']") || post.querySelector("a[slot='full-post-link']") ||
+        post.querySelector("[slot='title']") ||
+        post.querySelector("a[slot='full-post-link']") ||
         post.querySelector("h3") || post.querySelector("h1");
       const bodyEl =
         post.querySelector("[data-click-id='text'] p") ||
         post.querySelector("div[slot='text-body'] p");
+
       const postText = [titleEl?.innerText?.trim(), bodyEl?.innerText?.trim()].filter(Boolean).join(" — ");
       if (!postText) return;
       const quality = scorePost(postText);
-      if (quality < MIN_SCORE) return;
+      if (quality < MIN_SCORE_SOCIAL) return;
       const key = postText.substring(0, 60);
       if (processedPosts.has(key)) return;
       processedPosts.add(key);
+
       const authorEl =
         post.querySelector("a[href*='/user/']") ||
         post.querySelector("[data-testid='post_author_link']") ||
         post.querySelector("span[slot='authorName']");
+
       let profileUrl = "";
-      if (authorEl?.href) {
-        profileUrl = authorEl.href.split("?")[0];
-      } else if (authorEl?.innerText) {
-        profileUrl = `https://www.reddit.com/user/${authorEl.innerText.trim().replace("u/", "")}`;
-      } else {
-        profileUrl = window.location.href.split("?")[0];
-      }
-      leads.push({ postText, posterName: authorEl ? authorEl.innerText.trim() : "Unknown", profileUrl, quality, element: post });
+      if (authorEl?.href) profileUrl = authorEl.href.split("?")[0];
+      else if (authorEl?.innerText) profileUrl = `https://www.reddit.com/user/${authorEl.innerText.trim().replace("u/", "")}`;
+      else profileUrl = window.location.href.split("?")[0];
+
+      leads.push({
+        postText,
+        posterName: authorEl ? authorEl.innerText.trim() : "Unknown",
+        profileUrl, quality, element: post
+      });
     });
     return leads;
   }
 
-  function extractReviewCount(listing) {
-    const ratingEl = listing.querySelector("span[aria-label*='star'], span[aria-label*='review']");
-    if (ratingEl) {
-      const ariaLabel = ratingEl.getAttribute("aria-label") || "";
-      const match = ariaLabel.match(/(\d[\d,]*)\s*review/i);
-      if (match) return parseInt(match[1].replace(/,/g, ""), 10);
-    }
-    const reviewEl = listing.querySelector(".UY7F9, .MW4etd");
-    if (reviewEl) {
-      const txt = reviewEl.innerText.replace(/[(),\s]/g, "");
-      const num = parseInt(txt);
-      if (!isNaN(num) && num > 0) return num;
-    }
-    return 0;
-  }
-
-  function extractWebsiteFromListing(listing) {
-    const websiteEl =
-      listing.querySelector("a[data-value='Website']") ||
-      listing.querySelector("a[aria-label*='website' i]") ||
-      listing.querySelector("a[aria-label*='Visit' i]");
-    return websiteEl ? websiteEl.href : "";
-  }
-
-  // ─── FIX: filter out rating/number-only spans before picking category ─────
-  function extractCategoryAndAddress(listing) {
-    const spans = listing.querySelectorAll(".W4Efsd span, .fontBodyMedium span");
-    let category = "";
-    let address  = "";
-    const spanTexts = Array.from(spans)
-      .map(s => s.innerText?.trim())
-      .filter(t =>
-        t &&
-        t !== "·" &&
-        t.length > 2 &&
-        !/^[\d\s\.\(\),★·]+$/.test(t)
-      );
-    if (spanTexts.length > 0) category = spanTexts[0];
-    for (const t of spanTexts) {
-      if (/\d/.test(t) && t.length > 5) { address = t; break; }
-    }
-    return { category, address };
-  }
-
+  // ─── GOOGLE MAPS SCRAPER (rewritten — extracts category + address) ───────
   function scrapeGoogleMaps() {
     const leads = [];
+
     document.querySelectorAll('div[role="feed"] > div, .Nv2PK, [data-result-index]').forEach(listing => {
+      // Name
       const nameEl = listing.querySelector(".qBF1Pd, .fontHeadlineSmall, h3");
-      const descEl = listing.querySelector(".W4Efsd, .fontBodyMedium");
-      const postText = [nameEl?.innerText?.trim(), descEl?.innerText?.trim()].filter(Boolean).join(" — ");
-      if (!postText || postText.length < 30) return;
-      const quality = scorePost(postText);
-      if (quality < MIN_SCORE) return;
-      const key = postText.substring(0, 60);
-      if (processedPosts.has(key)) return;
-      processedPosts.add(key);
+      const businessName = nameEl ? nameEl.innerText.trim() : "";
+      if (!businessName) return;
+
+      // Maps listing structure: rows of "Category · Address" or rating info
+      // .W4Efsd contains multiple lines — we parse them
+      let category = "";
+      let address = "";
+
+      // Try the structured selectors first
+      const infoRows = listing.querySelectorAll(".W4Efsd, .fontBodyMedium");
+      const collected = [];
+      infoRows.forEach(row => {
+        const txt = row.innerText?.trim() || "";
+        if (!txt) return;
+        // Split on "·" which separates category from address/extras
+        txt.split("·").forEach(p => {
+          const part = p.trim();
+          if (part && !collected.includes(part)) collected.push(part);
+        });
+      });
+
+      // Heuristics: category usually doesn't contain digits or commas with state codes
+      // Address usually contains digits + street word OR has a comma
+      for (const part of collected) {
+        if (!category && /^[A-Za-z &/]+$/.test(part) && part.length < 50 && !/\d/.test(part)) {
+          category = part;
+        } else if (!address && (/\d/.test(part) || /,/.test(part))) {
+          if (part.length > 5 && part.length < 200) address = part;
+        }
+        if (category && address) break;
+      }
+
+      // Website link inside listing (Maps puts it as a separate anchor with target="_blank")
+      let website = "";
+      const webAnchor = listing.querySelector('a[data-value="Website"], a[aria-label*="website" i], a[href^="http"]:not([href*="google.com"])');
+      if (webAnchor && webAnchor.href && !webAnchor.href.includes("google.com")) {
+        website = webAnchor.href;
+      }
+
+      // Place URL (used as profileUrl for dedup)
       const linkEl = listing.querySelector("a[href*='/maps/place']")
-                  || listing.querySelector("a[href*='google.com/maps']")
-                  || listing.querySelector("a[href]");
-      const profileUrl = linkEl ? linkEl.href : window.location.href;
-      const reviewCount = extractReviewCount(listing);
-      const website     = extractWebsiteFromListing(listing);
-      const { category, address } = extractCategoryAndAddress(listing);
-      console.log(`[RKZ] ✅ Maps Lead | ${nameEl?.innerText?.trim()} | Cat: ${category} | Addr: ${address} | Reviews: ${reviewCount}`);
-      leads.push({ postText, posterName: nameEl ? nameEl.innerText.trim() : "Unknown", profileUrl, quality, element: listing, reviewCount, website, category, address });
-    });
-    document.querySelectorAll(".jftiEf, [data-review-id]").forEach(review => {
-      const textEl = review.querySelector(".wiI7pd") || review.querySelector(".MyEned span");
-      const postText = textEl ? textEl.innerText.trim() : "";
-      if (!postText) return;
-      const quality = scorePost(postText);
-      if (quality < MIN_SCORE) return;
-      const key = postText.substring(0, 60);
+                  || listing.querySelector("a[href*='google.com/maps']");
+      const profileUrl = linkEl ? linkEl.href : "";
+
+      // Skip if we have nothing useful
+      if (!businessName || !profileUrl) return;
+
+      // CATEGORY GATE: skip listings that aren't home-services categories.
+      // If category is empty, let it through — backend will re-check
+      // (sometimes the DOM doesn't render category until expanded).
+      if (category && !isMapsTargetCategory(category, businessName)) {
+        console.log(`[RKZ] 🚫 Off-category skip: ${businessName} [${category}]`);
+        return;
+      }
+
+      const key = profileUrl;        // place URL is unique per listing
       if (processedPosts.has(key)) return;
       processedPosts.add(key);
-      const nameEl = review.querySelector(".d4r55") || review.querySelector(".TSUbDb");
-      leads.push({ postText, posterName: nameEl ? nameEl.innerText.trim() : "Unknown", profileUrl: window.location.href.split("?")[0], quality, element: review, reviewCount: 0, website: "", category: "", address: "" });
+
+      console.log(`[RKZ] ✅ Maps Lead: ${businessName} | ${category} | ${address} | site: ${website || "NONE"}`);
+      leads.push({
+        postText:   `${businessName} — ${category} — ${address}`,
+        posterName: businessName,
+        profileUrl,
+        website,
+        category,
+        address,
+        quality:    5,                 // signal-based score comes from backend
+        element:    listing
+      });
     });
+
     return leads;
   }
 
+  // ─── Scrape + Send ───────────────────────────────────────────────────────
   function scrapeAndSend() {
     const platform = detectPlatform();
     let leads = [];
@@ -447,29 +529,33 @@
         console.log("[RKZ] Unsupported page:", window.location.href);
         return 0;
     }
+
     leads.sort((a, b) => b.quality - a.quality);
     if (leads.length > 0) console.log(`[RKZ] 🚀 Sending ${leads.length} lead(s) from ${platform}`);
+
     leads.forEach(lead => {
       chrome.runtime.sendMessage({
-        action:      "sendLead",
+        action:     "sendLead",
         platform,
-        postText:    lead.postText,
-        posterName:  lead.posterName,
-        profileUrl:  lead.profileUrl,
-        quality:     lead.quality,
-        reviewCount: lead.reviewCount || 0,
-        website:     lead.website     || "",
-        category:    lead.category    || "",
-        address:     lead.address     || ""
+        postText:   lead.postText,
+        posterName: lead.posterName,
+        profileUrl: lead.profileUrl,
+        website:    lead.website   || "",
+        category:   lead.category  || "",
+        address:    lead.address   || "",
+        quality:    lead.quality
       });
     });
+
     return leads.length;
   }
 
+  // ─── Auto-scroll ─────────────────────────────────────────────────────────
   function startAutoScroll() {
     if (isScrolling) return;
     isScrolling = true;
     console.log("[RKZ] ▶ Auto-scroll started");
+
     function humanScroll() {
       if (!isScrolling) return;
       const container = getScrollContainer();
@@ -492,10 +578,9 @@
     console.log("[RKZ] ⏹ Auto-scroll stopped");
   }
 
+  // ─── Message Listener ────────────────────────────────────────────────────
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-    if (msg.action === "startScroll") {
-      startAutoScroll(); sendResponse({ success: true }); return true;
-    }
+    if (msg.action === "startScroll") { startAutoScroll(); sendResponse({ success: true }); return true; }
     if (msg.action === "extract") {
       setTimeout(() => {
         const count = scrapeAndSend();
@@ -506,9 +591,7 @@
       }, 800);
       return true;
     }
-    if (msg.action === "stopScroll") {
-      stopAutoScroll(); sendResponse({ success: true }); return true;
-    }
+    if (msg.action === "stopScroll") { stopAutoScroll(); sendResponse({ success: true }); return true; }
     if (msg.action === "postComment") {
       const { commentText, profileUrl } = msg;
       const platform = detectPlatform();
@@ -521,17 +604,13 @@
         if (target) {
           setTimeout(() => postCommentFacebook(target, commentText), delay);
           sendResponse({ success: true, delay: Math.round(delay / 1000) });
-        } else {
-          sendResponse({ success: false, reason: "Post not found" });
-        }
+        } else sendResponse({ success: false, reason: "Post not found" });
       } else if (platform === "LinkedIn" || platform === "LinkedIn Groups") {
         const posts = document.querySelectorAll(".feed-shared-update-v2, .occludable-update, div[data-urn]");
         if (posts[0]) {
           setTimeout(() => postCommentLinkedIn(posts[0], commentText), delay);
           sendResponse({ success: true, delay: Math.round(delay / 1000) });
-        } else {
-          sendResponse({ success: false, reason: "Post not found" });
-        }
+        } else sendResponse({ success: false, reason: "Post not found" });
       } else {
         sendResponse({ success: false, reason: `Not supported on ${platform}` });
       }

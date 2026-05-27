@@ -21,17 +21,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const platformKeys = ["linkedin", "facebook", "reddit", "instagram", "maps"];
 
-  const SUPPORTED = [
-    "facebook.com",
-    "linkedin.com",
-    "instagram.com",
-    "reddit.com",
-    "google.com/maps"
-  ];
-
-  function isSupportedUrl(url) {
-    return SUPPORTED.some(s => url.includes(s));
-  }
+  const SUPPORTED = ["facebook.com","linkedin.com","instagram.com","reddit.com","google.com/maps"];
+  function isSupportedUrl(url) { return SUPPORTED.some(s => url.includes(s)); }
 
   let sessionLeadCount = 0;
   let isScrolling = false;
@@ -46,7 +37,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
-  // ── Group keywords ─────────────────────────────────────────────────────────
+  // ── Group keywords ─────────────────────────────────────────────────────
   const GROUP_KEYWORDS = {
     usa:       ["small business owners USA","entrepreneurs USA help","need a website USA","SEO help small business USA","digital marketing help USA"],
     uk:        ["small business owners UK","entrepreneurs UK help","need a website UK","SEO help UK small business","digital marketing UK help"],
@@ -55,18 +46,57 @@ document.addEventListener("DOMContentLoaded", () => {
     singapore: ["small business Singapore","startup founders Singapore","digital marketing Singapore","SEO Singapore help","ecommerce Singapore help"],
     malaysia:  ["small business Malaysia","startup founders Malaysia","digital marketing Malaysia","SEO Malaysia help","website help Malaysia"]
   };
-
   let selectedRegion = "usa";
 
-  // ── Load saved settings ────────────────────────────────────────────────
-  chrome.storage.sync.get(["agentUrl", "webhook", "autoscroll", "stats"], data => {
+  // ── Load saved settings (config stays in sync, stats in local) ─────────
+  chrome.storage.sync.get(["agentUrl", "webhook", "autoscroll"], data => {
     if (data.agentUrl)             agentUrlInput.value     = data.agentUrl;
     if (data.webhook)              webhookInput.value      = data.webhook;
     if (data.autoscroll !== undefined) autoScrollInput.checked = data.autoscroll;
+  });
+
+  chrome.storage.local.get(["stats"], data => {
     renderStats(data.stats || defaultStats());
   });
 
-  // Auto-save agentUrl as user types
+  // ── Live stats from backend ────────────────────────────────────────────
+  async function fetchBackendStats() {
+    const { agentUrl } = await chrome.storage.sync.get(["agentUrl"]);
+    if (!agentUrl) return;
+    try {
+      const res = await fetch(agentUrl.replace(/\/$/, "") + "/stats", { method: "GET" });
+      if (!res.ok) return;
+      const backendStats = await res.json();
+      // Backend stats are authoritative for totals; merge with local for recent + session
+      const data = await chrome.storage.local.get(["stats"]);
+      const local = data.stats || defaultStats();
+      const merged = {
+        ...local,
+        total:    backendStats.total      || local.total,
+        platforms: backendStats.by_platform
+                   ? mergePlatformCounts(backendStats.by_platform)
+                   : local.platforms
+      };
+      renderStats(merged);
+    } catch (e) { /* backend offline — fall back to local */ }
+  }
+
+  function mergePlatformCounts(byPlatform) {
+    const out = { linkedin: 0, facebook: 0, reddit: 0, instagram: 0, maps: 0 };
+    for (const [k, v] of Object.entries(byPlatform)) {
+      const key = k.toLowerCase().replace(" groups", "").replace("google maps", "maps");
+      const match = platformKeys.find(p => key.includes(p)) || "facebook";
+      out[match] = (out[match] || 0) + v;
+    }
+    return out;
+  }
+
+  // Refresh backend stats every 5s while popup is open
+  fetchBackendStats();
+  const statsTimer = setInterval(fetchBackendStats, 5000);
+  window.addEventListener("unload", () => clearInterval(statsTimer));
+
+  // ── Auto-save inputs ───────────────────────────────────────────────────
   let agentSaveTimer = null;
   agentUrlInput.addEventListener("input", () => {
     clearTimeout(agentSaveTimer);
@@ -81,7 +111,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }, 800);
   });
 
-  // Auto-save webhook URL as user types
   let webhookSaveTimer = null;
   webhookInput.addEventListener("input", () => {
     clearTimeout(webhookSaveTimer);
@@ -98,10 +127,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function defaultStats() {
     return {
-      total: 0,
-      scores: [],
-      platforms: { linkedin: 0, facebook: 0, reddit: 0, instagram: 0, maps: 0 },
-      recent: []
+      total: 0, scores: [], recent: [],
+      platforms: { linkedin: 0, facebook: 0, reddit: 0, instagram: 0, maps: 0 }
     };
   }
 
@@ -152,29 +179,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  function recordLead(platform, score, text, name) {
-    chrome.storage.sync.get(["stats"], data => {
-      const stats = data.stats || defaultStats();
-      stats.total = (stats.total || 0) + 1;
-      stats.scores = [...(stats.scores || []), score].slice(-100);
-
-      const key = platform.toLowerCase().replace(" groups","").replace("google maps","maps");
-      const match = platformKeys.find(k => key.includes(k)) || "facebook";
-      stats.platforms[match] = (stats.platforms[match] || 0) + 1;
-
-      stats.recent = [{
-        platform: platform.replace(" Groups",""),
-        score,
-        text: (text || "").substring(0, 100),
-        name: name || "Unknown",
-        time: Date.now()
-      }, ...(stats.recent || [])].slice(0, 20);
-
-      chrome.storage.sync.set({ stats }, () => renderStats(stats));
-    });
-  }
-
-  // ── Region selector ────────────────────────────────────────────────────────
+  // ── Region selector ────────────────────────────────────────────────────
   document.querySelectorAll(".region-btn").forEach(btn => {
     btn.addEventListener("click", () => {
       document.querySelectorAll(".region-btn").forEach(b => b.classList.remove("active"));
@@ -193,22 +198,17 @@ document.addEventListener("DOMContentLoaded", () => {
         chrome.tabs.create({ url: `https://www.facebook.com/groups/search/?q=${encodeURIComponent(kw)}`, active: i === 0 });
       }, i * 800);
     });
-    setTimeout(() => {
-      groupStatusEl.textContent = `✓ Opened 3 searches for ${selectedRegion.toUpperCase()}`;
-    }, 2500);
+    setTimeout(() => { groupStatusEl.textContent = `✓ Opened 3 searches for ${selectedRegion.toUpperCase()}`; }, 2500);
   });
 
-  // ── Save button ────────────────────────────────────────────────────────────
+  // ── Save ───────────────────────────────────────────────────────────────
   saveBtn.addEventListener("click", () => {
     chrome.storage.sync.set({
       agentUrl:   agentUrlInput.value.trim(),
       webhook:    webhookInput.value.trim(),
       autoscroll: autoScrollInput.checked
     }, () => {
-      if (chrome.runtime.lastError) {
-        setStatus("❌ Save failed", "error");
-        return;
-      }
+      if (chrome.runtime.lastError) { setStatus("❌ Save failed", "error"); return; }
       const orig = saveBtn.textContent;
       saveBtn.textContent = "✓ Saved!";
       setStatus("Settings saved", "success");
@@ -216,50 +216,34 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
-  // ── Send / Extract button ──────────────────────────────────────────────────
+  // ── Send / Extract ─────────────────────────────────────────────────────
   sendBtn.addEventListener("click", () => {
     setStatus("Scanning page...", "");
-
     chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
       const tab = tabs[0];
-
       if (!isSupportedUrl(tab.url || "")) {
-        setStatus("❌ Not on a supported page", "error");
-        return;
+        setStatus("❌ Not on a supported page", "error"); return;
       }
-
       chrome.scripting.executeScript(
         { target: { tabId: tab.id }, files: ["content.js"] },
         () => {
           setTimeout(() => {
             chrome.tabs.sendMessage(tab.id, { action: "extract" }, res => {
               if (chrome.runtime.lastError) {
-                setStatus("❌ Could not scan page — try refreshing", "error");
-                return;
+                setStatus("❌ Could not scan — try refreshing", "error"); return;
               }
               if (res && res.count !== undefined) {
                 sessionLeadCount += res.count;
                 sessionLeadsEl.textContent = sessionLeadCount;
-
                 if (res.count > 0) {
                   setStatus(`✅ Found ${res.count} lead(s)!${autoScrollInput.checked ? " Scrolling..." : ""}`, "success");
-                  if (autoScrollInput.checked) {
-                    chrome.tabs.sendMessage(tab.id, { action: "startScroll" }, () => {
-                      setScrolling(true);
-                    });
-                  }
                 } else {
                   setStatus("⏭ Scrolling to find leads...", "");
-                  if (autoScrollInput.checked) {
-                    chrome.tabs.sendMessage(tab.id, { action: "startScroll" }, () => {
-                      setScrolling(true);
-                    });
-                  }
                 }
-
-                chrome.storage.sync.get(["stats"], data => {
-                  renderStats(data.stats || defaultStats());
-                });
+                if (autoScrollInput.checked) {
+                  chrome.tabs.sendMessage(tab.id, { action: "startScroll" }, () => setScrolling(true));
+                }
+                fetchBackendStats();
               }
             });
           }, 500);
@@ -268,14 +252,10 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
-  // ── Stop button ────────────────────────────────────────────────────────────
   stopBtn.addEventListener("click", () => {
     chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
-      chrome.tabs.sendMessage(tabs[0].id, { action: "stopScroll" }, res => {
-        if (chrome.runtime.lastError) {
-          setStatus("❌ Could not stop", "error");
-          return;
-        }
+      chrome.tabs.sendMessage(tabs[0].id, { action: "stopScroll" }, () => {
+        if (chrome.runtime.lastError) { setStatus("❌ Could not stop", "error"); return; }
         setScrolling(false);
         setStatus("⏹ Scroll stopped", "");
       });
@@ -285,9 +265,7 @@ document.addEventListener("DOMContentLoaded", () => {
   autoScrollInput.addEventListener("change", () => {
     if (!autoScrollInput.checked && isScrolling) {
       chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
-        chrome.tabs.sendMessage(tabs[0].id, { action: "stopScroll" }, () => {
-          setScrolling(false);
-        });
+        chrome.tabs.sendMessage(tabs[0].id, { action: "stopScroll" }, () => setScrolling(false));
       });
     }
   });
@@ -297,21 +275,18 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   clearBtn.addEventListener("click", () => {
-    chrome.storage.sync.set({ stats: defaultStats() }, () => {
+    chrome.storage.local.set({ stats: defaultStats() }, () => {
       sessionLeadCount = 0;
       renderStats(defaultStats());
-      setStatus("Stats cleared", "");
-      setTimeout(clearStatus, 1500);
+      setStatus("Local stats cleared (backend untouched)", "");
+      setTimeout(clearStatus, 1800);
     });
   });
 
-  chrome.storage.onChanged.addListener((changes) => {
-    if (changes.stats) renderStats(changes.stats.newValue || defaultStats());
-  });
-
-  chrome.runtime.onMessage.addListener((msg) => {
-    if (msg.action === "leadRecorded") {
-      recordLead(msg.platform, msg.quality || 5, msg.postText, msg.posterName);
+  // React to stat changes from background.js
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "local" && changes.stats) {
+      renderStats(changes.stats.newValue || defaultStats());
     }
   });
 
@@ -328,14 +303,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  function setStatus(msg, type) {
-    statusEl.textContent = msg;
-    statusEl.className   = type;
-  }
-
-  function clearStatus() {
-    statusEl.textContent = "";
-    statusEl.className   = "";
-  }
+  function setStatus(msg, type) { statusEl.textContent = msg; statusEl.className = type; }
+  function clearStatus() { statusEl.textContent = ""; statusEl.className = ""; }
 
 });
