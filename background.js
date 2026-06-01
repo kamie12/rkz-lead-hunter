@@ -80,6 +80,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.action !== "sendLead") return false;
 
   (async () => {
+    try {
     const platform   = msg.platform   || "Unknown";
     const postText   = (msg.postText  || "").trim();
     const posterName = msg.posterName || "Unknown";
@@ -109,7 +110,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     const sheetUrl = (rawWebhook || "").trim();
 
     if (!agentUrl || !agentUrl.startsWith("http")) {
-      console.error("[RKZ] ❌ No agent URL set — go to Controls and save Agent URL");
+      console.warn("[RKZ] ⚠ No agent URL set — go to Controls and save Agent URL");
       return;
     }
 
@@ -156,7 +157,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         console.log(`[RKZ] ✅ Maps enriched — score ${score}: ${mapsPayload.businessName}`);
         await updateLocalStats(platform, score, `${mapsPayload.category} - ${mapsPayload.address}`, mapsPayload.businessName);
       } catch (err) {
-        console.error("[RKZ] ❌ Maps enrichment failed:", err.message);
+        console.warn("[RKZ] ⚠ Maps enrichment request failed:", err.message);
       }
       return;
     }
@@ -205,6 +206,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       console.warn("[RKZ] ⚠ Agent unreachable:", err.message);
       // No fallback Sheet write — backend owns Sheet writes now.
       // The lead stays in local dedup cache only; user can re-trigger after agent comes back.
+    }
+    } catch (err) {
+      // Any unexpected throw (storage, dedup, JSON) is logged as a warning so it
+      // never becomes an uncaught rejection that lights the service-worker error badge.
+      console.warn("[RKZ] ⚠ Unhandled in sendLead handler:", err && err.message);
     }
   })();
 
