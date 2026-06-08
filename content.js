@@ -47,7 +47,7 @@
         return href.split("?")[0];
       }
     }
-    return window.location.href.split("?")[0];
+    return "";   // no real profile URL — let background.js dedup on name+text instead of colliding on the page URL
   }
 
   // ─── Scroll containers ───────────────────────────────────────────────────
@@ -291,7 +291,7 @@
         post.querySelector("a[href*='/in/']") ||
         post.querySelector("a[href*='/company/']");
 
-      const profileUrl = linkEl ? linkEl.href.split("?")[0] : window.location.href.split("?")[0];
+      const profileUrl = linkEl ? linkEl.href.split("?")[0] : "";
       leads.push({
         postText,
         posterName: nameEl ? nameEl.innerText.trim() : "Unknown",
@@ -346,7 +346,7 @@
         post.querySelector("a[href*='/company/']") ||
         post.querySelector(".feed-shared-actor__container-link");
 
-      const profileUrl = linkEl ? linkEl.href.split("?")[0] : window.location.href.split("?")[0];
+      const profileUrl = linkEl ? linkEl.href.split("?")[0] : "";
       leads.push({
         postText,
         posterName: nameEl ? nameEl.innerText.trim() : "Unknown",
@@ -380,7 +380,7 @@
         post.querySelector("header a[role='link']") ||
         post.querySelector("header a");
 
-      const profileUrl = nameEl ? nameEl.href.split("?")[0] : window.location.href.split("?")[0];
+      const profileUrl = nameEl ? nameEl.href.split("?")[0] : "";
       leads.push({
         postText,
         posterName: nameEl ? nameEl.innerText.trim() : "Unknown",
@@ -421,7 +421,7 @@
       let profileUrl = "";
       if (authorEl?.href) profileUrl = authorEl.href.split("?")[0];
       else if (authorEl?.innerText) profileUrl = `https://www.reddit.com/user/${authorEl.innerText.trim().replace("u/", "")}`;
-      else profileUrl = window.location.href.split("?")[0];
+      else profileUrl = "";
 
       leads.push({
         postText,
