@@ -24,6 +24,20 @@ document.addEventListener("DOMContentLoaded", () => {
   const SUPPORTED = ["facebook.com","linkedin.com","instagram.com","reddit.com","google.com/maps"];
   function isSupportedUrl(url) { return SUPPORTED.some(s => url.includes(s)); }
 
+  // ── Agent URL validation ───────────────────────────────────────────────
+  // Rejects blanks, embedded spaces/arrows/newlines, and non-http(s) schemes.
+  // A pasted "ngrok-url -> localhost:8000" now fails HERE (visibly, in the UI)
+  // instead of being saved and dying silently inside fetch() in background.js.
+  function isValidAgentUrl(s) {
+    if (!s || /\s/.test(s)) return false;
+    try {
+      const u = new URL(s);
+      return u.protocol === "http:" || u.protocol === "https:";
+    } catch {
+      return false;
+    }
+  }
+
   let sessionLeadCount = 0;
   let isScrolling = false;
 
@@ -103,8 +117,14 @@ document.addEventListener("DOMContentLoaded", () => {
     agentUrlInput.style.borderColor = "var(--muted)";
     agentSaveTimer = setTimeout(() => {
       const url = agentUrlInput.value.trim();
+      if (url && !isValidAgentUrl(url)) {
+        agentUrlInput.style.borderColor = "var(--red)";
+        setStatus("❌ Invalid Agent URL — paste only the ngrok link, nothing else", "error");
+        return;                                   // do NOT save garbage to storage
+      }
       chrome.storage.sync.set({ agentUrl: url }, () => {
         if (chrome.runtime.lastError) return;
+        clearStatus();
         agentUrlInput.style.borderColor = "var(--green)";
         setTimeout(() => { agentUrlInput.style.borderColor = ""; }, 1200);
       });
@@ -203,8 +223,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // ── Save ───────────────────────────────────────────────────────────────
   saveBtn.addEventListener("click", () => {
+    const agentUrl = agentUrlInput.value.trim();
+    if (agentUrl && !isValidAgentUrl(agentUrl)) {
+      agentUrlInput.style.borderColor = "var(--red)";
+      setStatus("❌ Invalid Agent URL — paste only the ngrok link, nothing else", "error");
+      return;
+    }
     chrome.storage.sync.set({
-      agentUrl:   agentUrlInput.value.trim(),
+      agentUrl,
       webhook:    webhookInput.value.trim(),
       autoscroll: autoScrollInput.checked
     }, () => {
